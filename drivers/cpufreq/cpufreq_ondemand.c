@@ -153,6 +153,7 @@ static struct dbs_tuners {
 	unsigned int sampling_down_factor;
 	int          powersave_bias;
 	unsigned int io_is_busy;
+	unsigned int input_boost;
 #if defined(CONFIG_LG_GRID_GOVERNOR)
 	unsigned int optimal_max_freq; /* in KHz */
 	unsigned int middle_grid_step;
@@ -179,6 +180,7 @@ static struct dbs_tuners {
 	.powersave_bias = 0,
 	.sync_freq = 0,
 	.optimal_freq = 0,
+	.input_boost = 0,
 #if defined(CONFIG_LG_GRID_GOVERNOR)
 	.optimal_max_freq = DEF_OPTIMAL_FREQ,
 	.optimal_lpm_freq = DEF_OLPM_FREQ,
@@ -325,6 +327,7 @@ show_one(middle_grid_load, middle_grid_load);
 show_one(high_grid_load, high_grid_load);
 #endif /* defined(CONFIG_LG_GRID_GOVERNOR) */
 show_one(sync_freq, sync_freq);
+show_one(input_boost, input_boost);
 #if defined(CONFIG_LG_GRID_GOVERNOR)
 show_one(optimal_max_freq, optimal_max_freq);
 show_one(optimal_lpm_freq, optimal_lpm_freq);
@@ -402,6 +405,18 @@ static ssize_t store_sampling_rate(struct kobject *a, struct attribute *b,
 	if (ret != 1)
 		return -EINVAL;
 	update_sampling_rate(input);
+	return count;
+}
+
+static ssize_t store_input_boost(struct kobject *a, struct attribute *b,
+				const char *buf, size_t count)
+{
+	unsigned int input;
+	int ret;
+	ret = sscanf(buf, "%u", &input);
+	if (ret != 1)
+		return -EINVAL;
+	dbs_tuners_ins.input_boost = input;
 	return count;
 }
 
@@ -783,6 +798,7 @@ define_one_global_rw(up_threshold_multi_core);
 define_one_global_rw(optimal_freq);
 define_one_global_rw(up_threshold_any_cpu_load);
 define_one_global_rw(sync_freq);
+define_one_global_rw(input_boost);
 
 #if defined(CONFIG_LG_GRID_GOVERNOR)
 define_one_global_rw(optimal_max_freq);
@@ -807,6 +823,7 @@ static struct attribute *dbs_attributes[] = {
 	&optimal_freq.attr,
 	&up_threshold_any_cpu_load.attr,
 	&sync_freq.attr,
+	&input_boost.attr,
 #if defined(CONFIG_LG_GRID_GOVERNOR)
 	&optimal_max_freq.attr,
 	&middle_grid_step.attr,
@@ -1174,6 +1191,7 @@ static void dbs_refresh_callback(struct work_struct *work)
 	struct cpu_dbs_info_s *this_dbs_info;
 	struct dbs_work_struct *dbs_work;
 	unsigned int cpu;
+	unsigned int target_freq;
 
 	dbs_work = container_of(work, struct dbs_work_struct, work);
 	cpu = dbs_work->cpu;
@@ -1190,14 +1208,19 @@ static void dbs_refresh_callback(struct work_struct *work)
 		goto bail_incorrect_governor;
 	}
 
-	if (policy->cur < policy->max) {
+	if (dbs_tuners_ins.input_boost)
+		target_freq = dbs_tuners_ins.input_boost;
+	else
+		target_freq = policy->max;
+
+	if (policy->cur < target_freq) {
 		/*
 		 * Arch specific cpufreq driver may fail.
 		 * Don't update governor frequency upon failure.
 		 */
-		if (__cpufreq_driver_target(policy, policy->max,
+		if (__cpufreq_driver_target(policy, target_freq,
 					CPUFREQ_RELATION_L) >= 0)
-			policy->cur = policy->max;
+			policy->cur = target_freq;
 
 		this_dbs_info->prev_cpu_idle = get_cpu_idle_time(cpu,
 				&this_dbs_info->prev_cpu_wall, dbs_tuners_ins.io_is_busy);
