@@ -19,6 +19,21 @@
 #include <linux/types.h>
 #endif
 
+#if defined(CONFIG_LGE_EVENT_LOCK)
+/**
+ * struct input_value - input value representation
+ * @type: type of value (EV_KEY, EV_ABS, etc)
+ * @code: the value code
+ * @value: the value
+ */
+struct input_value {
+	__u16 type;
+	__u16 code;
+	__s32 value;
+};
+#endif
+
+
 /*
  * The event structure itself
  */
@@ -167,6 +182,7 @@ struct input_keymap_entry {
 #define INPUT_PROP_DIRECT		0x01	/* direct input devices */
 #define INPUT_PROP_BUTTONPAD		0x02	/* has button(s) under pad */
 #define INPUT_PROP_SEMI_MT		0x03	/* touch rectangle only */
+#define INPUT_PROP_NO_DUMMY_RELEASE	0x04	/* no dummy event */
 
 #define INPUT_PROP_MAX			0x1f
 #define INPUT_PROP_CNT			(INPUT_PROP_MAX + 1)
@@ -470,6 +486,9 @@ struct input_keymap_entry {
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
+#if defined(CONFIG_MACH_APQ8064_GK_KR) || defined(CONFIG_MACH_APQ8064_GKATT)  || defined(CONFIG_MACH_APQ8064_GV_KR) || defined(CONFIG_MACH_APQ8064_GKGLOBAL) || defined(CONFIG_MACH_APQ8064_AWIFI) || defined(CONFIG_MACH_APQ8064_OMEGAR_KR) || defined(CONFIG_MACH_APQ8064_OMEGA_KR) || defined(CONFIG_MACH_APQ8064_ALTEV)
+#define KEY_QUICK_CLIP	250 /*                     */
+#endif
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100
@@ -936,7 +955,14 @@ struct input_keymap_entry {
  */
 #define MT_TOOL_FINGER		0
 #define MT_TOOL_PEN		1
+#if defined(CONFIG_MACH_APQ8064_OMEGAR_KR) || defined(CONFIG_MACH_APQ8064_OMEGA_KR)
+#define MT_TOOL_PALM		2
+#define MT_TOOL_LARGEPALM	3
 #define MT_TOOL_MAX		1
+#else
+#define MT_TOOL_MAX		2
+#endif
+
 
 /*
  * Values describing the status of a force-feedback effect
@@ -1321,6 +1347,11 @@ struct input_dev {
 
 	struct list_head	h_list;
 	struct list_head	node;
+
+#if defined(CONFIG_LGE_EVENT_LOCK)
+	struct input_value *vals;
+#endif
+
 };
 #define to_input_dev(d) container_of(d, struct input_dev, dev)
 
@@ -1417,6 +1448,9 @@ struct input_handler {
 	void *private;
 
 	void (*event)(struct input_handle *handle, unsigned int type, unsigned int code, int value);
+#if defined(CONFIG_LGE_EVENT_LOCK)
+	void (*events)(struct input_handle *handle, const struct input_value *vals, unsigned int count);
+#endif
 	bool (*filter)(struct input_handle *handle, unsigned int type, unsigned int code, int value);
 	bool (*match)(struct input_handler *handler, struct input_dev *dev);
 	int (*connect)(struct input_handler *handler, struct input_dev *dev, const struct input_device_id *id);
@@ -1510,7 +1544,11 @@ void input_inject_event(struct input_handle *handle, unsigned int type, unsigned
 
 static inline void input_report_key(struct input_dev *dev, unsigned int code, int value)
 {
+#if 1 //               
+	input_event(dev, EV_KEY, code, value);
+#else // orig
 	input_event(dev, EV_KEY, code, !!value);
+#endif
 }
 
 static inline void input_report_rel(struct input_dev *dev, unsigned int code, int value)

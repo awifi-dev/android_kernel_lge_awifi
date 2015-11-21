@@ -571,7 +571,11 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 	sigset_t new_sigset;
 	sigset_t old_sigset;
 
-
+	#if defined(CONFIG_LGE_BROADCAST_ONESEG) //QCT Patch SFS Fail 0511 patch
+	sigset_t new_sigset;
+	sigset_t old_sigset;
+	#endif
+	
 	while (resp->result == QSEOS_RESULT_INCOMPLETE) {
 		lstnr = resp->data;
 		/*
@@ -601,6 +605,10 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 		pr_debug("waking up rcv_req_wq and "
 				"waiting for send_resp_wq\n");
 
+<<<<<<< HEAD
+=======
+		#if defined(CONFIG_LGE_BROADCAST_ONESEG) //QCT Patch SFS Fail 0511 patch
+>>>>>>> decfe26... LA.AF.1.1_rb1.12 -> LG VK810 V35A
 		/* initialize the new signal mask with all signals*/
 		sigfillset(&new_sigset);
 		/* block all signals */
@@ -614,6 +622,14 @@ static int __qseecom_process_incomplete_cmd(struct qseecom_dev_handle *data,
 
 		/* restore signal mask */
 		sigprocmask(SIG_SETMASK, &old_sigset, NULL);
+		#else
+		if (wait_event_freezable(qseecom.send_resp_wq,
+				__qseecom_listener_has_sent_rsp(data))) {
+			pr_warning("Interrupted: exiting send_cmd loop\n");
+			return -ERESTARTSYS;
+		}
+		#endif
+		
 		if (data->abort) {
 			pr_err("Abort clnt %d waiting on lstnr svc %d, ret %d",
 				data->client.app_id, lstnr, ret);

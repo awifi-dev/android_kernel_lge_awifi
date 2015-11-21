@@ -147,3 +147,11 @@ obj-$(CONFIG_ESOC)		+= esoc/
 #sensor_class
 obj-$(CONFIG_SENSORS)		+= sensors/
 
+#1Seg
+obj-$(CONFIG_LGE_BROADCAST_ONESEG) += broadcast/
+
+#TDMB
+obj-$(CONFIG_LGE_BROADCAST_TDMB) += broadcast/
+
+#FeliCa
+obj-$(CONFIG_LGE_FELICA) 	+= felica/

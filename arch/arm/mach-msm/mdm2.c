@@ -41,6 +41,14 @@
 #include "devices.h"
 #include "clock.h"
 #include "mdm_private.h"
+#ifdef CONFIG_LGE_NFC_SONY_CXD2235AGG
+extern int snfc_poweroff_flag;
+#endif
+
+#ifdef CONFIG_LGE_PM_SHUTDOWN_MDM_IN_CHARGERLOGO
+#include <mach/board_lge.h>
+#endif
+
 #define MDM_PBLRDY_CNT		20
 
 static int mdm_debug_mask;
@@ -118,6 +126,10 @@ static void mdm_power_down_common(struct mdm_modem_drv *mdm_drv)
 		msleep(100);
 	}
 
+#ifdef CONFIG_LGE_NFC_SONY_CXD2235AGG
+	snfc_poweroff_flag = 1;
+#endif
+
 	/* Assert the soft reset line whether mdm2ap_status went low or not */
 	gpio_direction_output(mdm_drv->ap2mdm_soft_reset_gpio,
 					soft_reset_direction);
@@ -140,6 +152,13 @@ static void mdm_do_first_power_on(struct mdm_modem_drv *mdm_drv)
 	int pblrdy;
 	int kpd_direction_assert = 1,
 		kpd_direction_de_assert = 0;
+
+#ifdef CONFIG_LGE_PM_SHUTDOWN_MDM_IN_CHARGERLOGO
+	if(lge_get_charger_logo_state()) {
+		pr_info("Fisrt_power_on_not_wroking\n");
+		return;
+	}
+#endif
 
 	if (mdm_drv->pdata->kpd_not_inverted) {
 		kpd_direction_assert = 0;
