@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2014, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -118,10 +118,10 @@ the appropriate macros. */
 /* This needs to be modified manually now, when we add
  a new RANGE of SSIDs to the msg_mask_tbl */
 #define MSG_MASK_TBL_CNT		25
-#define EVENT_LAST_ID			0x0A22
+#define EVENT_LAST_ID			0x0AAA
 
 #define MSG_SSID_0			0
-#define MSG_SSID_0_LAST			105
+#define MSG_SSID_0_LAST			107
 #define MSG_SSID_1			500
 #define MSG_SSID_1_LAST			506
 #define MSG_SSID_2			1000
@@ -137,7 +137,7 @@ the appropriate macros. */
 #define MSG_SSID_7			4600
 #define MSG_SSID_7_LAST			4615
 #define MSG_SSID_8			5000
-#define MSG_SSID_8_LAST			5029
+#define MSG_SSID_8_LAST			5031
 #define MSG_SSID_9			5500
 #define MSG_SSID_9_LAST			5516
 #define MSG_SSID_10			6000
@@ -180,7 +180,7 @@ struct diagpkt_delay_params {
 static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_LOW,
 	MSG_LVL_MED,
-	MSG_LVL_MED,
+	MSG_LVL_LOW,
 	MSG_LVL_ERROR,
 	MSG_LVL_LOW,
 	MSG_LVL_MED,
@@ -188,20 +188,20 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_HIGH,
 	MSG_LVL_ERROR,
 	MSG_LVL_LOW,
+	MSG_LVL_LOW,
 	MSG_LVL_ERROR,
-	MSG_LVL_ERROR,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_HIGH,
 	MSG_LVL_HIGH,
-	MSG_LVL_HIGH,
+	MSG_LVL_LOW|MSG_MASK_5|MSG_MASK_6|MSG_MASK_7|MSG_MASK_8,
 	MSG_LVL_LOW,
 	MSG_LVL_ERROR,
 	MSG_LVL_LOW,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
-	MSG_LVL_MED,
+	MSG_LVL_LOW,
 	MSG_LVL_MED,
 	MSG_LVL_LOW,
 	MSG_LVL_MED,
@@ -216,7 +216,7 @@ static const uint32_t msg_bld_masks_0[] = {
 		MSG_MASK_6|MSG_MASK_7|MSG_MASK_8|MSG_MASK_9|MSG_MASK_10| \
 		MSG_MASK_11|MSG_MASK_12|MSG_MASK_13|MSG_MASK_14| \
 		MSG_MASK_15|MSG_MASK_16|MSG_MASK_17,
-	MSG_LVL_MED,
+	MSG_LVL_LOW,
 	MSG_LVL_MED,
 	MSG_LVL_HIGH,
 	MSG_LVL_HIGH,
@@ -240,7 +240,7 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_MED|MSG_MASK_5 | \
 		MSG_MASK_6|MSG_MASK_7|MSG_MASK_8|MSG_MASK_9|MSG_MASK_10,
 	MSG_LVL_MED,
-	MSG_LVL_MED,
+	MSG_LVL_LOW,
 	MSG_LVL_LOW,
 	MSG_LVL_MED,
 	MSG_LVL_LOW,
@@ -272,7 +272,7 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
-	MSG_LVL_HIGH,
+	MSG_LVL_HIGH | MSG_MASK_21,
 	MSG_LVL_HIGH,
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
@@ -300,7 +300,9 @@ static const uint32_t msg_bld_masks_0[] = {
 	MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR,
 	MSG_LVL_MED|MSG_LVL_HIGH|MSG_LVL_ERROR,
 	MSG_LVL_MED|MSG_LVL_HIGH,
-	MSG_LVL_MED|MSG_LVL_HIGH
+	MSG_LVL_MED|MSG_LVL_HIGH,
+	MSG_LVL_LOW,
+	MSG_LVL_HIGH
 };
 
 static const uint32_t msg_bld_masks_1[] = {
@@ -330,7 +332,8 @@ static const uint32_t msg_bld_masks_3[] = {
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
-	MSG_LVL_MED,
+	MSG_LVL_MED|MSG_MASK_5|MSG_MASK_6|MSG_MASK_7|
+				MSG_MASK_8|MSG_MASK_9|MSG_MASK_10,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED
@@ -438,6 +441,8 @@ static const uint32_t msg_bld_masks_8[] = {
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
 	MSG_LVL_LOW,
+	MSG_LVL_MED,
+	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
 	MSG_LVL_MED,
@@ -756,25 +761,27 @@ static const uint32_t msg_bld_masks_23[] = {
 };
 
 /* LOG CODES */
+static const uint32_t log_code_last_tbl[] = {
+	0x0,	/* EQUIP ID 0 */
+	0x18FC,	/* EQUIP ID 1 */
+	0x0,	/* EQUIP ID 2 */
+	0x0,	/* EQUIP ID 3 */
+	0x4910,	/* EQUIP ID 4 */
+	0x5420,	/* EQUIP ID 5 */
+	0x0,	/* EQUIP ID 6 */
+	0x74FF,	/* EQUIP ID 7 */
+	0x0,	/* EQUIP ID 8 */
+	0x0,	/* EQUIP ID 9 */
+	0xA38A,	/* EQUIP ID 10 */
+	0xB201,	/* EQUIP ID 11 */
+	0x0,	/* EQUIP ID 12 */
+	0x0,	/* EQUIP ID 13 */
+	0x0,	/* EQUIP ID 14 */
+	0x0,	/* EQUIP ID 15 */
+};
 
-#define LOG_0	0x0
-#define LOG_1	0x1871
-#define LOG_2	0x0
-#define LOG_3	0x0
-#define LOG_4	0x4910
-#define LOG_5	0x5420
-#define LOG_6	0x0
-#define LOG_7	0x74FF
-#define LOG_8	0x0
-#define LOG_9	0x0
-#define LOG_10	0xA38A
-#define LOG_11	0xB201
-#define LOG_12	0x0
-#define LOG_13	0x0
-#define LOG_14	0x0
-#define LOG_15	0x0
-
-#define LOG_GET_ITEM_NUM(xx_code) (xx_code & 0x0FFF)
-#define LOG_GET_EQUIP_ID(xx_code) ((xx_code & 0xF000) >> 12)
+#define LOG_GET_ITEM_NUM(xx_code)	(xx_code & 0x0FFF)
+#define LOG_GET_EQUIP_ID(xx_code)	((xx_code & 0xF000) >> 12)
+#define LOG_ITEMS_TO_SIZE(num_items)	((num_items+7)/8)
 
 #endif

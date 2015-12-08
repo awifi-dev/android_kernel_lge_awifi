@@ -1,6 +1,6 @@
 /*
  *
- * Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2010-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -62,9 +62,22 @@
 #define SECONDARY_PCM_RX 12			/* index = 32 */
 #define SECONDARY_PCM_TX 13			/* index = 33 */
 
+/** Multichannel I2S Rx group device port. */
+#define MI2S_RX_0 MI2S_RX		/* index = 6 */
+#define MI2S_TX_0 MI2S_TX		/* index = 7 */
+#define MI2S_RX_1 14			/* index = 34 */
+#define MI2S_TX_1 15			/* index = 35 */
+#define MI2S_RX_2 16			/* index = 36 */
+#define MI2S_TX_2 17			/* index = 37 */
 
 #define AFE_PORT_INVALID 0xFFFF
 #define SLIMBUS_EXTPROC_RX AFE_PORT_INVALID
+
+/** Multichannel I2S Rx group device ID. */
+#define AFE_GROUP_DEVICE_ID_MI2S_RX			(MI2S_RX + 0x100)
+
+/** Multichannel I2S Tx group device ID. */
+#define AFE_GROUP_DEVICE_ID_MI2S_TX			(MI2S_TX + 0x100)
 
 #define AFE_PORT_CMD_START 0x000100ca
 
@@ -410,6 +423,25 @@ struct afe_param_loopback_cfg {
 #define AFE_MODULE_ID_PORT_INFO		0x00010200
 /* Module ID for the loopback-related parameters. */
 #define AFE_MODULE_LOOPBACK           0x00010205
+
+#define AFE_MODULE_TDM 0x0001028A
+
+#define AFE_PARAM_ID_PORT_SLOT_MAPPING_CONFIG 0x00010297
+#define AFE_API_VERSION_SLOT_MAPPING_CONFIG 0x1
+
+/* Data align type. */
+#define AFE_SLOT_MAPPING_DATA_ALIGN_MSB 0
+#define AFE_SLOT_MAPPING_DATA_ALIGN_LSB 1
+
+#define AFE_SLOT_MAPPING_OFFSET_INVALID 0xFFFF
+struct afe_param_id_slot_mapping_cfg {
+	uint32_t minor_version;
+	uint16_t num_channel;
+	uint16_t bitwidth;
+	uint32_t data_align_type;
+	uint16_t offset[AFE_PORT_MAX_AUDIO_CHAN_CNT];
+} __packed;
+
 struct afe_param_payload_base {
 	u32 module_id;
 	u32 param_id;
@@ -426,6 +458,7 @@ struct afe_param_payload {
 		struct afe_param_loopback_gain loopback_gain;
 		struct afe_param_loopback_cfg loopback_cfg;
 		struct afe_param_id_device_hw_delay_cfg hw_delay;
+		struct afe_param_id_slot_mapping_cfg slot_mapping_cfg;
 	} __attribute__((packed)) param;
 } __attribute__ ((packed));
 
@@ -513,6 +546,45 @@ struct afe_cmd_rtport_rd {
 
 #define AFE_EVENT_RT_PROXY_PORT_STATUS 0x00010105
 
+#define AFE_MODULE_GROUP_DEVICE 0x00010254
+
+#define AFE_PARAM_ID_GROUP_DEVICE_I2S_CONFIG 0x00010286
+#define AFE_API_VERSION_GROUP_DEVICE_I2S_CONFIG 0x1
+#define AFE_GROUP_DEVICE_NUM_PORTS 8
+struct afe_param_id_group_device_i2s_cfg_v1 {
+	uint32_t minor_version;
+	uint16_t group_id;
+	uint16_t channel_mode;
+	uint32_t sample_rate;
+	uint16_t port_id[AFE_GROUP_DEVICE_NUM_PORTS];
+	uint16_t bit_width;
+	uint16_t reserved;
+} __packed;
+
+#define AFE_PARAM_ID_GROUP_DEVICE_ENABLE 0x00010256
+struct afe_param_id_group_device_enable {
+	uint16_t group_id;
+	uint16_t enable;
+} __packed;
+
+struct afe_service_param_payload {
+	struct afe_param_payload_base base;
+	union {
+		struct afe_param_id_group_device_i2s_cfg_v1
+				 group_device_i2s_cfg;
+		struct afe_param_id_group_device_enable group_device_enable;
+	} __packed param;
+} __packed;
+
+#define AFE_SERVICE_CMD_SET_PARAM_V1 0x000100F9
+
+struct afe_service_cmd_set_param {
+	struct apr_hdr hdr;
+	u32 payload_size;
+	u32 payload_address;
+	struct afe_service_param_payload payload;
+} __packed;
+
 #define ADM_MAX_COPPS 5
 
 #define ADM_SERVICE_CMD_GET_COPP_HANDLES                 0x00010300
@@ -579,7 +651,7 @@ struct adm_multi_ch_copp_open_command {
 	u16 endpoint_id2;
 	u32 topology_id;
 	u16 channel_config;
-	u16 reserved;
+	u16 bit_width;
 	u32 rate;
 	u8 dev_channel_mapping[8];
 } __packed;
@@ -626,8 +698,8 @@ struct adm_cmd_memory_unmap_regions{
 #define VPM_TX_SM_ECNS_COPP_TOPOLOGY			0x00010F71
 #define VPM_TX_DM_FLUENCE_COPP_TOPOLOGY			0x00010F72
 #define VPM_TX_QMIC_FLUENCE_COPP_TOPOLOGY		0x00010F75
-
-#define LOWLATENCY_POPP_TOPOLOGY			0x00010C68
+#define NONE_POPP_TOPOLOGY				0x00010C68
+#define LOWLATENCY_POPP_TOPOLOGY			NONE_POPP_TOPOLOGY
 #define LOWLATENCY_COPP_TOPOLOGY			0x00010312
 #define PCM_BITS_PER_SAMPLE				16
 
@@ -692,6 +764,10 @@ struct asm_softpause_params {
 	u32 rampingcurve;
 } __packed;
 
+struct asm_high_thd_resamp_params {
+	u32 enable;
+} __packed;
+
 struct asm_pp_param_data_hdr {
 	u32 module_id;
 	u32 param_id;
@@ -723,6 +799,9 @@ struct asm_pp_params_command {
 #define MBADRC_MODULE_ID 0x00010c06
 #define MBADRC_ENABLE_PARAM_ID 0x00010c07
 #define MBADRC_CONFIG_PARAM_ID 0x00010c08
+
+#define RESAMPLER_MODULE_ID   0x00010719
+#define HIGH_THD_RESAMPLER_ENABLE_PARAM_ID 0x0001071A
 
 
 #define ADM_CMD_SET_PARAMS                               0x00010306
@@ -998,16 +1077,16 @@ struct asm_amrwbplus_cfg {
 };
 
 struct asm_flac_cfg {
-	u16 stream_info_present;
-	u16 min_blk_size;
-	u16 max_blk_size;
-	u16 ch_cfg;
-	u16 sample_size;
-	u16 sample_rate;
-	u16 md5_sum;
-	u32 ext_sample_rate;
-	u32 min_frame_size;
-	u32 max_frame_size;
+	uint16_t          is_stream_info_present;
+	uint16_t          num_channels;
+	uint16_t          min_blk_size;
+	uint16_t          max_blk_size;
+	uint16_t          md5_sum[8];
+	uint32_t          sample_rate;
+	uint32_t          min_frame_size;
+	uint32_t          max_frame_size;
+	uint16_t          sample_size;
+	uint16_t          reserved;
 };
 
 struct asm_vorbis_cfg {
@@ -1169,6 +1248,7 @@ struct asm_stream_cmd_open_read_v2_1 {
 #define AMR_WB_PLUS  0x00010BF5
 #define AC3_DECODER  0x00010BF6
 #define EAC3_DECODER 0x00010C3C
+#define FLAC_DECODER 0x00010C16
 #define DTS	0x00010D88
 #define DTS_LBR	0x00010DBB
 #define ATRAC	0x00010D89
@@ -1180,6 +1260,7 @@ struct asm_stream_cmd_open_read_v2_1 {
 #define US_POINT_EPOS_FORMAT 0x00012310
 #define US_RAW_FORMAT        0x0001127C
 #define MULTI_CHANNEL_PCM    0x00010C66
+#define DTMF_DETECTION       0x00010C2F
 
 #define ASM_ENCDEC_SBCRATE         0x00010C13
 #define ASM_ENCDEC_IMMDIATE_DECODE 0x00010C14
@@ -1202,7 +1283,7 @@ struct asm_stream_cmd_open_write {
 	struct apr_hdr hdr;
 	u32            uMode;
 	u16            sink_endpoint;
-	u16            stream_handle;
+	u16            bits_per_sample;
 	u32            post_proc_top;
 	u32            format;
 } __attribute__((packed));
@@ -1242,6 +1323,30 @@ struct asm_stream_cmd_open_loopback {
 /* Postprocessor topology ID. Specifies the topology of
  * postprocessing algorithms.
  */
+} __packed;
+
+#define ASM_STREAM_CMD_OPEN_LOOPBACK_V2 0x00010D8E
+struct asm_stream_cmd_open_loopback_v2 {
+	struct apr_hdr         hdr;
+	u32                    mode_flags;
+/* Mode flags.
+ * Bit 0-31: reserved; client should set these bits to 0
+ */
+	u16                    src_endpointype;
+	/* Endpoint type. 0 = Tx Matrix */
+	u16                    sink_endpointype;
+	/* Endpoint type. 0 = Rx Matrix */
+	u32                    postprocopo_id;
+/* Postprocessor topology ID. Specifies the topology of
+ * postprocessing algorithms.
+ */
+
+	u16                    bits_per_sample;
+/* The number of bits per sample processed by ASM modules
+ * Supported values: 16 and 24 bits per sample
+ */
+	u16                    reserved;
+/* Reserved for future use. This field must be set to zero. */
 } __packed;
 
 #define ADM_CMD_CONNECT_AFE_PORT 0x00010320
@@ -1511,6 +1616,12 @@ struct asm_data_event_sr_cm_change_notify {
 	u16	           no_of_channels;
 	u16            reserved;
 	u8             channel_map[8];
+} __packed;
+
+#define ASM_DATA_EVENT_DTMF_TONE_DETECTED                           0x00012f38
+struct asm_data_event_dtmf_tone_detected {
+	uint16_t       low_freq;
+	uint16_t       high_freq;
 } __packed;
 
 /* service level events */

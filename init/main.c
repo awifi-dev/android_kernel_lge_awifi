@@ -68,6 +68,7 @@
 #include <linux/shmem_fs.h>
 #include <linux/slab.h>
 #include <linux/perf_event.h>
+#include <linux/random.h>
 
 #include <asm/io.h>
 #include <asm/bugs.h>
@@ -77,6 +78,10 @@
 
 #ifdef CONFIG_X86_LOCAL_APIC
 #include <asm/smp.h>
+#endif
+
+#ifdef CONFIG_BOOT_TIME_MARKER
+#include <mach/board.h>
 #endif
 
 static int kernel_init(void *);
@@ -386,6 +391,13 @@ static noinline void __init_refok rest_init(void)
 	cpu_idle();
 }
 
+/* Splash screen Boot marker value from LK */
+#ifdef CONFIG_BOOT_TIME_MARKER
+#define MAX_SS_LK_MARKER_SIZE 16
+char lk_splash_val[MAX_SS_LK_MARKER_SIZE] = "0";
+unsigned long kernel_start_marker;
+#endif
+
 /* Check for early params. */
 static int __init do_early_param(char *param, char *val)
 {
@@ -400,6 +412,10 @@ static int __init do_early_param(char *param, char *val)
 				printk(KERN_WARNING
 				       "Malformed early option '%s'\n", param);
 		}
+#ifdef CONFIG_BOOT_TIME_MARKER
+		if (strcmp(param, "LK_splash") == 0)
+			strlcpy(lk_splash_val, val, sizeof(lk_splash_val));
+#endif
 	}
 	/* We accept everything at this stage. */
 	return 0;
@@ -491,6 +507,9 @@ asmlinkage void __init start_kernel(void)
 	page_address_init();
 	printk(KERN_NOTICE "%s", linux_banner);
 	setup_arch(&command_line);
+#ifdef CONFIG_BOOT_TIME_MARKER
+	kernel_start_marker = msm_timer_get_sclk_ticks();
+#endif
 	/*
 	 * Set up the the initial canary ASAP:
 	 */
@@ -509,7 +528,7 @@ asmlinkage void __init start_kernel(void)
 	parse_early_param();
 	parse_args("Booting kernel", static_command_line, __start___param,
 		   __stop___param - __start___param,
-		   0, 0, &unknown_bootoption);
+		   -1, -1, &unknown_bootoption);
 
 	jump_label_init();
 
@@ -561,9 +580,6 @@ asmlinkage void __init start_kernel(void)
 	early_boot_irqs_disabled = false;
 	local_irq_enable();
 
-	/* Interrupts are enabled now so all GFP allocations are safe. */
-	gfp_allowed_mask = __GFP_BITS_MASK;
-
 	kmem_cache_init_late();
 
 	/*
@@ -606,8 +622,12 @@ asmlinkage void __init start_kernel(void)
 	pidmap_init();
 	anon_vma_init();
 #ifdef CONFIG_X86
-	if (efi_enabled)
+	if (efi_enabled(EFI_RUNTIME_SERVICES))
 		efi_enter_virtual_mode();
+#endif
+#ifdef CONFIG_X86_ESPFIX64
+	/* Should be run before the first non-init thread is created */
+	init_espfix_bsp();
 #endif
 	thread_info_cache_init();
 	cred_init();
@@ -633,6 +653,12 @@ asmlinkage void __init start_kernel(void)
 
 	acpi_early_init(); /* before LAPIC and SMP init */
 	sfi_init_late();
+
+#ifdef CONFIG_BOOT_TIME_MARKER
+	init_marker_proc_fs();
+#endif
+	if (efi_enabled(EFI_RUNTIME_SERVICES))
+		efi_free_boot_services();
 
 	ftrace_init();
 
@@ -780,6 +806,7 @@ static void __init do_basic_setup(void)
 	do_ctors();
 	usermodehelper_enable();
 	do_initcalls();
+	random_int_secret_init();
 }
 
 static void __init do_pre_smp_initcalls(void)
@@ -810,6 +837,8 @@ static noinline int init_post(void)
 
 
 	current->signal->flags |= SIGNAL_UNKILLABLE;
+
+	place_marker("Linux_Kernel - End");
 
 	if (ramdisk_execute_command) {
 		run_init_process(ramdisk_execute_command);
@@ -843,6 +872,10 @@ static int __init kernel_init(void * unused)
 	 * Wait until kthreadd is all set-up.
 	 */
 	wait_for_completion(&kthreadd_done);
+
+	/* Now the scheduler is fully set up and can do blocking allocations */
+	gfp_allowed_mask = __GFP_BITS_MASK;
+
 	/*
 	 * init can allocate pages on any node
 	 */

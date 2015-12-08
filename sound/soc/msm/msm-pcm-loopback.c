@@ -68,6 +68,11 @@ static const struct snd_pcm_hardware dummy_pcm_hardware = {
 	.periods_max            = 128,
 };
 
+enum {
+	BITS_PER_SAMPLE_8 = 8,
+	BITS_PER_SAMPLE_16 = 16
+};
+
 static void msm_pcm_route_event_handler(enum msm_pcm_routing_event event,
 					void *priv_data)
 {
@@ -108,11 +113,11 @@ static void msm_pcm_loopback_event_handler(uint32_t opcode,
 
 static int pcm_loopback_set_volume(struct msm_pcm_loopback *prtd, int volume)
 {
-	int rc = 0;
+	int rc = -EINVAL;
 
 	pr_debug("%s Setting volume 0x%x\n", __func__, volume);
 
-	if (prtd) {
+	if (prtd && prtd->audio_client) {
 		rc = q6asm_set_volume(prtd->audio_client, volume);
 		if (rc < 0) {
 			pr_err("%s: Send Volume command failed rc = %d\n",
@@ -130,6 +135,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	struct snd_soc_pcm_runtime *rtd = snd_pcm_substream_chip(substream);
 	struct msm_pcm_loopback *pcm;
 	int ret = 0;
+	uint16_t bits_per_sample = BITS_PER_SAMPLE_16;
 	struct msm_pcm_routing_evt event;
 
 	pcm = dev_get_drvdata(rtd->platform->dev);
@@ -164,7 +170,8 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 		}
 		pcm->session_id = pcm->audio_client->session;
 		pcm->audio_client->perf_mode = false;
-		ret = q6asm_open_loopack(pcm->audio_client);
+		ret = q6asm_open_loopback_v2(pcm->audio_client,
+					     bits_per_sample);
 		if (ret < 0) {
 			dev_err(rtd->platform->dev,
 				"%s: pcm out open failed\n", __func__);
@@ -405,6 +412,7 @@ static int msm_pcm_remove(struct platform_device *pdev)
 
 	pcm = dev_get_drvdata(&pdev->dev);
 	mutex_destroy(&pcm->lock);
+	kfree(pcm);
 
 	snd_soc_unregister_platform(&pdev->dev);
 	return 0;
