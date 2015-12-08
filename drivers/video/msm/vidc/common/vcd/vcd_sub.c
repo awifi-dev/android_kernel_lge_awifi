@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2013, Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2013, 2015, Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1255,15 +1255,15 @@ u32 vcd_check_for_client_context(
 u32 vcd_validate_driver_handle(
 	struct vcd_dev_ctxt *dev_ctxt, s32 driver_handle)
 {
-	driver_handle--;
+	u32 result = false;
+	s32 driver_id = driver_handle - 1;
 
-	if (driver_handle < 0 ||
-		driver_handle >= VCD_DRIVER_CLIENTS_MAX ||
-		!dev_ctxt->driver_ids[driver_handle]) {
-		return false;
-	} else {
-		return true;
-	}
+	if ((0 <= driver_id) &&
+		(VCD_DRIVER_CLIENTS_MAX > driver_id) &&
+		(dev_ctxt->driver_ids[driver_id]))
+		result = true;
+
+	return result;
 }
 
 u32 vcd_client_cmd_en_q(
@@ -2499,7 +2499,6 @@ u32 vcd_handle_first_fill_output_buffer_for_enc(
 	struct vcd_sequence_hdr seq_hdr;
 	struct vcd_property_sps_pps_for_idr_enable idr_enable;
 	struct vcd_property_codec codec;
-	u8 *kernel_vaddr = NULL;
 	*handled = true;
 	prop_hdr.prop_id = DDL_I_SEQHDR_PRESENT;
 	prop_hdr.sz = sizeof(seqhdr_present);
@@ -2527,26 +2526,7 @@ u32 vcd_handle_first_fill_output_buffer_for_enc(
 			if (!cctxt->secure) {
 				prop_hdr.prop_id = VCD_I_SEQ_HEADER;
 				prop_hdr.sz = sizeof(struct vcd_sequence_hdr);
-				if (vcd_get_ion_status()) {
-					kernel_vaddr = (u8 *)ion_map_kernel(
-						cctxt->vcd_ion_client,
-						frm_entry->buff_ion_handle);
-					if (IS_ERR_OR_NULL(kernel_vaddr)) {
-						VCD_MSG_ERROR("%s: 0x%x = "\
-						"ion_map_kernel(0x%x, 0x%x) fail",
-						__func__,
-						(u32)kernel_vaddr,
-						(u32)cctxt->vcd_ion_client,
-						(u32)frm_entry->
-						buff_ion_handle);
-						return VCD_ERR_FAIL;
-					}
-				} else {
-					VCD_MSG_ERROR("%s: ION status is NULL",
-						__func__);
-					return VCD_ERR_FAIL;
-				}
-				seq_hdr.sequence_header = kernel_vaddr;
+				seq_hdr.sequence_header = frm_entry->virtual;
 				seq_hdr.sequence_header_len =
 					frm_entry->alloc_len;
 				rc = ddl_get_property(cctxt->ddl_handle,
@@ -2557,8 +2537,6 @@ u32 vcd_handle_first_fill_output_buffer_for_enc(
 					frm_entry->time_stamp = 0;
 					frm_entry->flags |=
 						VCD_FRAME_FLAG_CODECCONFIG;
-					VCD_MSG_LOW("%s: header len = %u",
-						__func__, frm_entry->data_len);
 				} else
 					VCD_MSG_ERROR("rc = 0x%x. Failed:"
 							"ddl_get_property: VCD_I_SEQ_HEADER",
@@ -2600,16 +2578,6 @@ u32 vcd_handle_first_fill_output_buffer_for_enc(
 		VCD_MSG_ERROR(
 			"rc = 0x%x. Failed: ddl_get_property:VCD_I_CODEC",
 			rc);
-	if (kernel_vaddr) {
-		if (!IS_ERR_OR_NULL(frm_entry->buff_ion_handle)) {
-			ion_map_kernel(cctxt->vcd_ion_client,
-				frm_entry->buff_ion_handle);
-		} else {
-			VCD_MSG_ERROR("%s: Invalid ion_handle (0x%x)",
-				__func__, (u32)frm_entry->buff_ion_handle);
-			rc = VCD_ERR_FAIL;
-		}
-	}
 	return rc;
 }
 
@@ -3163,10 +3131,8 @@ u32 vcd_req_perf_level(
 		return -EINVAL;
 	}
 	res_trk_perf_level = get_res_trk_perf_level(perf_level->level);
-	if ((int)res_trk_perf_level < 0) {
+	if (res_trk_perf_level < 0) {
 		rc = -ENOTSUPP;
-		VCD_MSG_ERROR("%s: unsupported perf level(%d)",
-			__func__, res_trk_perf_level);
 		goto perf_level_not_supp;
 	}
 	turbo_perf_level = get_res_trk_perf_level(VCD_PERF_LEVEL_TURBO);
@@ -3177,10 +3143,6 @@ u32 vcd_req_perf_level(
 		if (res_trk_perf_level == turbo_perf_level)
 			cctxt->is_turbo_enabled = true;
 	}
-	VCD_MSG_HIGH("%s: client perf level = %u, "\
-		"perf_set_by_client = %u, is_turbo_enabled = %u",
-		__func__, cctxt->reqd_perf_lvl, cctxt->perf_set_by_client,
-		cctxt->is_turbo_enabled);
 perf_level_not_supp:
 	return rc;
 }
