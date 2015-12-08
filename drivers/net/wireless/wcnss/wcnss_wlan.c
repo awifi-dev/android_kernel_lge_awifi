@@ -59,6 +59,14 @@ static int has_calibrated_data = WCNSS_CONFIG_UNSPECIFIED;
 module_param(has_calibrated_data, int, S_IWUSR | S_IRUGO);
 MODULE_PARM_DESC(has_calibrated_data, "whether calibrated data file available");
 
+// 20141222_QCOM
+/*
+static int do_not_cancel_vote = WCNSS_CONFIG_UNSPECIFIED;
+module_param(do_not_cancel_vote, int, S_IWUSR | S_IRUGO);
+MODULE_PARM_DESC(do_not_cancel_vote, "Do not cancel vote for wcnss");
+*/
+// 20141222_QCOM
+
 static DEFINE_SPINLOCK(reg_spinlock);
 
 #define MSM_RIVA_PHYS			0x03204000
@@ -85,6 +93,7 @@ static DEFINE_SPINLOCK(reg_spinlock);
 #define WCNSS_USR_CTRL_MSG_START  0x00000000
 #define WCNSS_USR_SERIAL_NUM      (WCNSS_USR_CTRL_MSG_START + 1)
 #define WCNSS_USR_HAS_CAL_DATA    (WCNSS_USR_CTRL_MSG_START + 2)
+#define WCNSS_USR_WLAN_MAC_ADDR   (WCNSS_USR_CTRL_MSG_START + 3)
 
 #define MAC_ADDRESS_STR "%02x:%02x:%02x:%02x:%02x:%02x"
 
@@ -136,7 +145,7 @@ static struct wcnss_pmic_dump wcnss_pmic_reg_dump[] = {
 	{"LVS1", 0x060}, /*LVS7*/
 };
 
-#define NVBIN_FILE "wlan/prima/WCNSS_qcom_wlan_nv.bin"
+#define NVBIN_FILE "wlan/prima/WCNSS_qcom_wlan_nv_init.bin"
 
 /*
  * On SMD channel 4K of maximum data can be transferred, including message
@@ -503,6 +512,14 @@ static void wcnss_smd_notify_event(void *data, unsigned int event)
 
 static void wcnss_post_bootup(struct work_struct *work)
 {
+	// 20141222_QCOM
+	/*
+	if(do_not_cancel_vote == 1){
+		pr_err("%s: keeping APPS vote for Iris & WCNSS\n", __func__);
+		return;
+	}
+	*/
+	// 20141222_QCOM
 	pr_info("%s: Cancel APPS vote for Iris & Riva\n", __func__);
 
 	/* Since Riva is up, cancel any APPS vote for Iris & Riva VREGs  */
@@ -1434,6 +1451,16 @@ void process_usr_ctrl_cmd(u8 *buf, size_t len)
 			pr_err("%s: Invalid data for cal %d\n", __func__,
 				buf[2]);
 		has_calibrated_data = buf[2];
+		break;
+
+	case WCNSS_USR_WLAN_MAC_ADDR:
+		memcpy(&penv->wlan_nv_macAddr,  &buf[2],
+				sizeof(penv->wlan_nv_macAddr));
+
+		pr_debug("%s: MAC Addr:" MAC_ADDRESS_STR "\n", __func__,
+			penv->wlan_nv_macAddr[0], penv->wlan_nv_macAddr[1],
+			penv->wlan_nv_macAddr[2], penv->wlan_nv_macAddr[3],
+			penv->wlan_nv_macAddr[4], penv->wlan_nv_macAddr[5]);
 		break;
 
 	default:

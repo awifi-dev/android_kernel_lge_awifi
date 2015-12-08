@@ -205,9 +205,6 @@
 
 #define VFE_RELOAD_ALL_WRITE_MASTERS 0x00003FFF
 
-#define VFE_IOMMU_FAULT_HANDLER 1
-#define BUS_OVERFLOW_THRESHOLD  5
-
 enum VFE32_DMI_RAM_SEL {
 	NO_MEM_SELECTED          = 0,
 	BLACK_LUT_RAM_BANK0      = 0x1,
@@ -839,7 +836,7 @@ struct vfe32_output_ch {
 #define VFE32_IMASK_STATS_IHIST_BUS_OVFL      (0x00000001<<20)
 #define VFE32_IMASK_STATS_SKIN_BHIST_BUS_OVFL (0x00000001<<21)
 #define VFE32_IMASK_AXI_ERROR                 (0x00000001<<22)
-
+#define VFE32_IMASK_BUS_OVFL_ERROR		0x005FFF00
 #define VFE_COM_STATUS 0x000FE000
 
 struct vfe32_output_path {
@@ -948,6 +945,7 @@ struct vfe32_frame_extra {
 #define VFE33_DMI_DATA_LO               0x000005A4
 #define VFE_AXI_CFG_MASK                0x80000000
 
+
 #define VFE32_OUTPUT_MODE_PT			BIT(0)
 #define VFE32_OUTPUT_MODE_S			BIT(1)
 #define VFE32_OUTPUT_MODE_V			BIT(2)
@@ -1023,8 +1021,7 @@ struct vfe_share_ctrl_t {
 
 	uint8_t stream_error;
 	uint32_t rdi_comp;
-	uint32_t overflow_count;
-	uint8_t stop_issued;
+
 };
 
 struct axi_ctrl_t {
@@ -1045,6 +1042,11 @@ struct axi_ctrl_t {
 	struct device *iommu_ctx_imgwr;
 	struct device *iommu_ctx_misc;
 	uint32_t simultaneous_sof_frame;
+/*                                                                  */
+#ifdef LGE_GK_CAMERA_BSP
+	struct mutex state_mutex;
+#endif
+/*                                                                */
 };
 
 struct vfe32_ctrl_type {
