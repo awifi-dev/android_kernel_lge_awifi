@@ -104,6 +104,9 @@ void show_mem(unsigned int filter)
 	printk("Mem-info:\n");
 	show_free_areas(filter);
 
+	if (filter & SHOW_MEM_FILTER_PAGE_COUNT)
+		return;
+
 	for_each_bank (i, mi) {
 		struct membank *bank = &mi->bank[i];
 		unsigned int pfn1, pfn2;
@@ -624,7 +627,7 @@ static void __init free_unused_memmap(struct meminfo *mi)
 #endif
 }
 
-static void __init free_highpages(void)
+void free_highpages(void)
 {
 #ifdef CONFIG_HIGHMEM
 	unsigned long max_low = max_low_pfn + PHYS_PFN_OFFSET;
@@ -703,7 +706,9 @@ void __init mem_init(void)
 				    __phys_to_pfn(__pa(swapper_pg_dir)), NULL);
 #endif
 
+#ifndef CONFIG_HIGHMEM_DEFER
 	free_highpages();
+#endif
 
 	reserved_pages = free_pages = 0;
 

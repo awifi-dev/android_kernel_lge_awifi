@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -51,13 +51,33 @@
 #endif  /* CONFIG_FB_MSM_OVERLAY1_WRITEBACK */
 
 
+/* Display panel type */
+enum DISPLAY_ID {
+	DISPLAY_PRIMARY = 0,
+	DISPLAY_SECONDARY,
+	DISPLAY_TERTIARY,
+	DISPLAY_WRITEBACK,
+	DISPLAY_MAX,
+};
+/* panel device locaiton */
+enum DISP_TARGET_PHYS {
+	DISPLAY_1 = 0,		/* attached as first device */
+	DISPLAY_2,		/* attached on second device */
+	DISPLAY_3,              /* attached on third writeback device */
+	DISPLAY_4,		/* attached on third dsi/lvds device */
+	MAX_PHYS_TARGET_NUM,
+};
+
 static struct resource msm_fb_resources[] = {
 	{
 		.flags = IORESOURCE_DMA,
 	}
 };
 
+#define MIPI_DSI_I2C_VIDEO_WVGA_NAME "mipi_dsi_i2c_video_wvga"
+#define MIPI_DSI_I2C_VIDEO_XGA_NAME "mipi_dsi_i2c_video_xga"
 #define LVDS_CHIMEI_PANEL_NAME "lvds_chimei_wxga"
+#define LVDS_FPDL3_PANEL_NAME "lvds_fpdl3_wxga"
 #define LVDS_FRC_PANEL_NAME "lvds_frc_fhd"
 #define MIPI_VIDEO_TOSHIBA_WSVGA_PANEL_NAME "mipi_video_toshiba_wsvga"
 #define MIPI_VIDEO_CHIMEI_WXGA_PANEL_NAME "mipi_video_chimei_wxga"
@@ -88,7 +108,8 @@ unsigned char apq8064_mhl_display_enabled(void)
 
 static void set_mdp_clocks_for_wuxga(void);
 
-static int msm_fb_detect_panel(const char *name)
+static int msm_fb_detect_panel(const char *name, struct platform_disp_info
+			       *disp_info)
 {
 	u32 version;
 	if (machine_is_apq8064_liquid()) {
@@ -115,6 +136,31 @@ static int msm_fb_detect_panel(const char *name)
 			strnlen(LVDS_CHIMEI_PANEL_NAME,
 				PANEL_NAME_MAX_LEN)))
 			return 0;
+	} else if (machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5()) {
+		if (!strcmp(name, LVDS_CHIMEI_PANEL_NAME)) {
+			if (disp_info) {
+				disp_info->id = DISPLAY_PRIMARY;
+				disp_info->dest = DISPLAY_1;
+			}
+			return 0;
+		} else if (!strcmp(name, MIPI_DSI_I2C_VIDEO_WVGA_NAME)) {
+			if (disp_info) {
+				disp_info->id = DISPLAY_TERTIARY;
+				disp_info->dest = DISPLAY_4;
+			}
+			return 0;
+		} else if (!strcmp(name, HDMI_PANEL_NAME)) {
+			if (disp_info) {
+				disp_info->id = DISPLAY_SECONDARY;
+				disp_info->dest = DISPLAY_2;
+			}
+			if (apq8064_hdmi_as_primary_selected())
+				set_mdp_clocks_for_wuxga();
+			return 0;
+		}
+
 	} else if (machine_is_mpq8064_dtv()) {
 		if (!strncmp(name, LVDS_FRC_PANEL_NAME,
 			strnlen(LVDS_FRC_PANEL_NAME,
@@ -257,6 +303,7 @@ static struct msm_panel_common_pdata mdp_pdata = {
 #else
 	.mem_hid = MEMTYPE_EBI1,
 #endif
+	.cont_splash_enabled = 0,
 	.mdp_iommu_split_domain = 1,
 };
 
@@ -301,6 +348,8 @@ static int hdmi_core_power(int on, int show);
 static int hdmi_cec_power(int on);
 static int hdmi_gpio_config(int on);
 static int hdmi_panel_power(int on);
+static bool hdmi_splash_is_enabled(void);
+
 
 static struct msm_hdmi_platform_data hdmi_msm_data = {
 	.irq = HDMI_IRQ,
@@ -309,6 +358,7 @@ static struct msm_hdmi_platform_data hdmi_msm_data = {
 	.cec_power = hdmi_cec_power,
 	.panel_power = hdmi_panel_power,
 	.gpio_config = hdmi_gpio_config,
+	.splash_is_enabled = hdmi_splash_is_enabled,
 };
 
 static struct platform_device hdmi_msm_device = {
@@ -409,25 +459,29 @@ static int mipi_dsi_panel_power(int on)
 			}
 		}
 
-		gpio25 = PM8921_GPIO_PM_TO_SYS(25);
-		rc = gpio_request(gpio25, "disp_rst_n");
-		if (rc) {
-			pr_err("request gpio 25 failed, rc=%d\n", rc);
-			return -ENODEV;
-		}
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			gpio25 = PM8921_GPIO_PM_TO_SYS(25);
+			rc = gpio_request(gpio25, "disp_rst_n");
+			if (rc) {
+				pr_err("request gpio 25 failed, rc=%d\n", rc);
+				return -ENODEV;
+			}
 
-		gpio26 = PM8921_GPIO_PM_TO_SYS(26);
-		rc = gpio_request(gpio26, "pwm_backlight_ctrl");
-		if (rc) {
-			pr_err("request gpio 26 failed, rc=%d\n", rc);
-			return -ENODEV;
-		}
+			gpio26 = PM8921_GPIO_PM_TO_SYS(26);
+			rc = gpio_request(gpio26, "pwm_backlight_ctrl");
+			if (rc) {
+				pr_err("request gpio 26 failed, rc=%d\n", rc);
+				return -ENODEV;
+			}
 
-		gpio36 = PM8921_GPIO_PM_TO_SYS(36); /* lcd1_pwr_en_n */
-		rc = gpio_request(gpio36, "lcd1_pwr_en_n");
-		if (rc) {
-			pr_err("request gpio 36 failed, rc=%d\n", rc);
-			return -ENODEV;
+			gpio36 = PM8921_GPIO_PM_TO_SYS(36); /* lcd1_pwr_en_n */
+			rc = gpio_request(gpio36, "lcd1_pwr_en_n");
+			if (rc) {
+				pr_err("request gpio 36 failed, rc=%d\n", rc);
+				return -ENODEV;
+			}
 		}
 
 		dsi_power_on = true;
@@ -472,15 +526,23 @@ static int mipi_dsi_panel_power(int on)
 			gpio_set_value_cansleep(mpp3, 1);
 		}
 
-		gpio_set_value_cansleep(gpio36, 0);
-		gpio_set_value_cansleep(gpio25, 1);
-		if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
-			gpio_set_value_cansleep(gpio26, 1);
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			gpio_set_value_cansleep(gpio36, 0);
+			gpio_set_value_cansleep(gpio25, 1);
+			if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
+				gpio_set_value_cansleep(gpio26, 1);
+		}
 	} else {
-		if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
-			gpio_set_value_cansleep(gpio26, 0);
-		gpio_set_value_cansleep(gpio25, 0);
-		gpio_set_value_cansleep(gpio36, 1);
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
+				gpio_set_value_cansleep(gpio26, 0);
+			gpio_set_value_cansleep(gpio25, 0);
+			gpio_set_value_cansleep(gpio36, 1);
+		}
 
 		if (machine_is_apq8064_liquid()) {
 			gpio_set_value_cansleep(mpp3, 0);
@@ -522,7 +584,8 @@ static struct mipi_dsi_platform_data mipi_dsi_pdata = {
 static bool lvds_power_on;
 static int lvds_panel_power(int on)
 {
-	static struct regulator *reg_lvs7, *reg_l2, *reg_ext_3p3v;
+	static struct regulator *reg_lvs7, *reg_l2, *reg_ext_3p3v,
+		*reg_lvds_s4;
 	static int gpio36, gpio26, mpp3;
 	int rc;
 
@@ -551,12 +614,16 @@ static int lvds_panel_power(int on)
 			return -EINVAL;
 		}
 
-		reg_ext_3p3v = regulator_get(&msm_lvds_device.dev,
-			"lvds_vccs_3p3v");
-		if (IS_ERR_OR_NULL(reg_ext_3p3v)) {
-			pr_err("could not get reg_ext_3p3v, rc = %ld\n",
-			       PTR_ERR(reg_ext_3p3v));
-		    return -ENODEV;
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			reg_ext_3p3v = regulator_get(&msm_lvds_device.dev,
+				"lvds_vccs_3p3v");
+			if (IS_ERR_OR_NULL(reg_ext_3p3v)) {
+				pr_err("could not get reg_ext_3p3v, rc = %ld\n",
+					PTR_ERR(reg_ext_3p3v));
+				return -ENODEV;
+			}
 		}
 
 		gpio26 = PM8921_GPIO_PM_TO_SYS(26);
@@ -580,6 +647,18 @@ static int lvds_panel_power(int on)
 			return -ENODEV;
 		}
 
+		if (machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5()) {
+			reg_lvds_s4 = regulator_get(&msm_lvds_device.dev,
+				"lvds_s4");
+			if (IS_ERR_OR_NULL(reg_lvds_s4)) {
+				pr_err("could not get reg_lvds_s4, rc = %ld\n",
+					PTR_ERR(reg_lvds_s4));
+				reg_lvds_s4 = NULL;
+				return -ENODEV;
+			}
+		}
 		lvds_power_on = true;
 	}
 
@@ -601,10 +680,26 @@ static int lvds_panel_power(int on)
 			return -ENODEV;
 		}
 
-		rc = regulator_enable(reg_ext_3p3v);
-		if (rc) {
-			pr_err("enable reg_ext_3p3v failed, rc=%d\n", rc);
-			return -ENODEV;
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			rc = regulator_enable(reg_ext_3p3v);
+			if (rc) {
+				pr_err("enable reg_ext_3p3v failed, rc=%d\n",
+					rc);
+				return -ENODEV;
+			}
+		}
+
+		if (machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5()) {
+			rc = regulator_enable(reg_lvds_s4);
+			if (rc) {
+				pr_err("enable reg_lvds_s4 failed, rc=%d\n",
+					rc);
+				return -ENODEV;
+			}
 		}
 
 		gpio_set_value_cansleep(gpio36, 0);
@@ -617,6 +712,17 @@ static int lvds_panel_power(int on)
 		gpio_set_value_cansleep(mpp3, 0);
 		gpio_set_value_cansleep(gpio36, 1);
 
+		if (machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5()) {
+			rc = regulator_disable(reg_lvds_s4);
+			if (rc) {
+				pr_err("disable reg_lvds_s4 failed, rc=%d\n",
+					rc);
+				return -ENODEV;
+			}
+		}
+
 		rc = regulator_disable(reg_lvs7);
 		if (rc) {
 			pr_err("disable reg_lvs7 failed, rc=%d\n", rc);
@@ -627,10 +733,15 @@ static int lvds_panel_power(int on)
 			pr_err("disable reg_l2 failed, rc=%d\n", rc);
 			return -ENODEV;
 		}
-		rc = regulator_disable(reg_ext_3p3v);
-		if (rc) {
-			pr_err("disable reg_ext_3p3v failed, rc=%d\n", rc);
-			return -ENODEV;
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			rc = regulator_disable(reg_ext_3p3v);
+			if (rc) {
+				pr_err("disable reg_ext_3p3v failed, rc=%d\n",
+					rc);
+				return -ENODEV;
+			}
 		}
 	}
 
@@ -641,8 +752,9 @@ static int lvds_pixel_remap(void)
 {
 	u32 ver = socinfo_get_version();
 
-	if (machine_is_apq8064_cdp() ||
-	    machine_is_apq8064_liquid()) {
+	if (machine_is_apq8064_cdp() || machine_is_apq8064_adp_2() ||
+	    machine_is_apq8064_liquid() || machine_is_apq8064_adp2_es2()
+			|| machine_is_apq8064_adp2_es2p5()) {
 		if ((SOCINFO_VERSION_MAJOR(ver) == 1) &&
 		    (SOCINFO_VERSION_MINOR(ver) == 0))
 			return LVDS_PIXEL_MAP_PATTERN_1;
@@ -652,6 +764,16 @@ static int lvds_pixel_remap(void)
 			return LVDS_PIXEL_MAP_PATTERN_2;
 	}
 	return 0;
+}
+
+static bool is_automotive_board(void)
+{
+	if (machine_is_apq8064_adp_2() ||
+		machine_is_apq8064_adp2_es2() ||
+		machine_is_apq8064_adp2_es2p5()) {
+		return true;
+	}
+	return false;
 }
 
 static struct lcdc_platform_data lvds_pdata = {
@@ -671,6 +793,19 @@ static struct platform_device lvds_chimei_panel_device = {
 	.id = 0,
 	.dev = {
 		.platform_data = &lvds_chimei_pdata,
+	}
+};
+
+static struct lvds_fpdl3_platform_data lvds_fpdl3_pdata = {
+	.chip_id = "DS90UH927Q",
+	.instance_id = 0,
+};
+
+struct platform_device lvds_fpdl3_panel_device = {
+	.name = "lvds_fpdl3_wxga",
+	.id = 0,
+	.dev = {
+		.platform_data = &lvds_fpdl3_pdata,
 	}
 };
 
@@ -757,6 +892,7 @@ static struct msm_bus_scale_pdata dtv_bus_scale_pdata = {
 static struct lcdc_platform_data dtv_pdata = {
 	.bus_scale_table = &dtv_bus_scale_pdata,
 	.lcdc_power_save = hdmi_panel_power,
+	.is_automotive_board = is_automotive_board,
 };
 
 static int hdmi_panel_power(int on)
@@ -770,6 +906,11 @@ static int hdmi_panel_power(int on)
 
 	pr_debug("%s: HDMI Core: %s Success\n", __func__, (on ? "ON" : "OFF"));
 	return rc;
+}
+
+static bool hdmi_splash_is_enabled(void)
+{
+	return mdp_pdata.cont_splash_enabled;
 }
 
 static int hdmi_enable_5v(int on)
@@ -824,14 +965,18 @@ static int hdmi_core_power(int on, int show)
 		return 0;
 
 	/* TBD: PM8921 regulator instead of 8901 */
-	if (!reg_ext_3p3v) {
-		reg_ext_3p3v = regulator_get(&hdmi_msm_device.dev,
-					     "hdmi_mux_vdd");
-		if (IS_ERR_OR_NULL(reg_ext_3p3v)) {
-			pr_err("could not get reg_ext_3p3v, rc = %ld\n",
-			       PTR_ERR(reg_ext_3p3v));
-			reg_ext_3p3v = NULL;
-			return -ENODEV;
+	if (!(machine_is_apq8064_adp_2() ||
+		machine_is_apq8064_adp2_es2() ||
+		machine_is_apq8064_adp2_es2p5())) {
+		if (!reg_ext_3p3v) {
+			reg_ext_3p3v = regulator_get(&hdmi_msm_device.dev,
+							"hdmi_mux_vdd");
+			if (IS_ERR_OR_NULL(reg_ext_3p3v)) {
+				pr_err("could not get reg_ext_3p3v, rc = %ld\n",
+					PTR_ERR(reg_ext_3p3v));
+				reg_ext_3p3v = NULL;
+				return -ENODEV;
+			}
 		}
 	}
 
@@ -866,16 +1011,21 @@ static int hdmi_core_power(int on, int show)
 		 * Configure 3P3V_BOOST_EN as GPIO, 8mA drive strength,
 		 * pull none, out-high
 		 */
-		rc = regulator_set_optimum_mode(reg_ext_3p3v, 290000);
-		if (rc < 0) {
-			pr_err("set_optimum_mode ext_3p3v failed, rc=%d\n", rc);
-			return -EINVAL;
-		}
-
-		rc = regulator_enable(reg_ext_3p3v);
-		if (rc) {
-			pr_err("enable reg_ext_3p3v failed, rc=%d\n", rc);
-			return rc;
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			rc = regulator_set_optimum_mode(reg_ext_3p3v, 290000);
+			if (rc < 0) {
+				pr_err("set_optimum_mode ext_3p3v failed," \
+					" rc=%d\n", rc);
+				return -EINVAL;
+			}
+			rc = regulator_enable(reg_ext_3p3v);
+			if (rc) {
+				pr_err("enable reg_ext_3p3v failed, rc=%d\n",
+					rc);
+				return rc;
+			}
 		}
 		rc = regulator_enable(reg_8921_lvs7);
 		if (rc) {
@@ -891,10 +1041,15 @@ static int hdmi_core_power(int on, int show)
 		}
 		pr_debug("%s(on): success\n", __func__);
 	} else {
-		rc = regulator_disable(reg_ext_3p3v);
-		if (rc) {
-			pr_err("disable reg_ext_3p3v failed, rc=%d\n", rc);
-			return -ENODEV;
+		if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			rc = regulator_disable(reg_ext_3p3v);
+			if (rc) {
+				pr_err("disable reg_ext_3p3v failed, rc=%d\n",
+					rc);
+				return -ENODEV;
+			}
 		}
 		rc = regulator_disable(reg_8921_lvs7);
 		if (rc) {
@@ -916,7 +1071,11 @@ static int hdmi_core_power(int on, int show)
 error2:
 	regulator_disable(reg_8921_lvs7);
 error1:
-	regulator_disable(reg_ext_3p3v);
+	if (!(machine_is_apq8064_adp_2() ||
+		machine_is_apq8064_adp2_es2() ||
+		machine_is_apq8064_adp2_es2p5())) {
+		regulator_disable(reg_ext_3p3v);
+	}
 	return rc;
 }
 
@@ -1057,7 +1216,7 @@ static void set_mdp_clocks_for_wuxga(void)
 }
 
 void __init apq8064_set_display_params(char *prim_panel, char *ext_panel,
-		unsigned char resolution)
+		unsigned char resolution, char *sec_panel)
 {
 	/*
 	 * For certain MPQ boards, HDMI should be set as primary display
@@ -1098,6 +1257,13 @@ void __init apq8064_set_display_params(char *prim_panel, char *ext_panel,
 			pr_debug("MHL is external display by boot parameter\n");
 			mhl_display_enabled = 1;
 		}
+	}
+
+	if (strnlen(sec_panel, PANEL_NAME_MAX_LEN)) {
+		strlcpy(msm_fb_pdata.sec_panel_name, sec_panel,
+			PANEL_NAME_MAX_LEN);
+		pr_debug("msm_fb_pdata.sec_panel_name %s\n",
+			 msm_fb_pdata.sec_panel_name);
 	}
 
 	msm_fb_pdata.ext_resolution = resolution;

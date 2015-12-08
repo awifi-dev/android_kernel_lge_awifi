@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2015, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -25,6 +25,10 @@
 #include "board-8064.h"
 
 #ifdef CONFIG_MSM_CAMERA
+
+#define CSI_CORE_0 0
+#define CSI_CORE_1 1
+#define CSI_CORE_2 2
 
 static struct gpiomux_setting cam_settings[] = {
 	{
@@ -183,7 +187,6 @@ static struct msm_gpiomux_config apq8064_cam_common_configs[] = {
 		},
 	},
 };
-
 
 #define VFE_CAMIF_TIMER1_GPIO 3
 #define VFE_CAMIF_TIMER2_GPIO 1
@@ -430,6 +433,16 @@ static struct msm_camera_device_platform_data msm_camera_csi_device_data[] = {
 		.is_vpe    = 1,
 		.cam_bus_scale_table = &cam_bus_client_pdata,
 	},
+	{
+		.csid_core = 0,
+		.is_vpe    = 0,
+		.cam_bus_scale_table = &cam_bus_client_pdata,
+	},
+	{
+		.csid_core = 2,
+		.is_vpe    = 0,
+		.cam_bus_scale_table = &cam_bus_client_pdata,
+	},
 };
 
 static struct camera_vreg_t apq_8064_cam_vreg[] = {
@@ -440,7 +453,8 @@ static struct camera_vreg_t apq_8064_cam_vreg[] = {
 };
 
 #define CAML_RSTN PM8921_GPIO_PM_TO_SYS(28)
-#define CAMR_RSTN 34
+/* PMM 8920 GPIO_27 for ADV_RESET_N */
+#define CAMR_RSTN PM8921_MPP_PM_TO_SYS(27)
 
 static struct gpio apq8064_common_cam_gpio[] = {
 };
@@ -519,7 +533,6 @@ static struct msm_actuator_info msm_act_main_cam_1_info = {
 	.vcm_enable     = 0,
 };
 
-
 static struct msm_camera_i2c_conf apq8064_front_cam_i2c_conf = {
 	.use_i2c_mux = 1,
 	.mux_dev = &msm8960_device_i2c_mux_gsbi4,
@@ -527,6 +540,10 @@ static struct msm_camera_i2c_conf apq8064_front_cam_i2c_conf = {
 };
 
 static struct msm_camera_sensor_flash_data flash_imx135 = {
+	.flash_type = MSM_CAMERA_FLASH_NONE,
+};
+
+static struct msm_camera_sensor_flash_data flash_none = {
 	.flash_type = MSM_CAMERA_FLASH_NONE,
 };
 
@@ -723,16 +740,167 @@ static struct platform_device msm_camera_server = {
 	.id = 0,
 };
 
+/* avdevice sensors */
+static struct msm_camera_csi_lane_params avdevice_csi_lane_params[] = {
+	{
+	.csi_lane_assign = 0xe4,
+	.csi_lane_mask = 0x1,
+	.csi_phy_sel = 0,
+	},
+	{
+	.csi_lane_assign = 0xe4,
+	.csi_lane_mask = 0x1,
+	.csi_phy_sel = 2,
+	},
+	{ /* 2 lane combo phy csi0 ln0/ln3 */
+	.csi_lane_assign = 0xc,
+	.csi_lane_mask = 0x9,
+	.csi_phy_sel = 0,
+	},
+};
+
+static struct msm_camera_sensor_platform_info sensor_board_info_avdevice[] = {
+	{
+	.mount_angle    = 0,
+	.cam_vreg = apq_8064_cam_vreg,
+	.num_vreg = ARRAY_SIZE(apq_8064_cam_vreg),
+	.gpio_conf = &apq8064_back_cam_gpio_conf,
+	.i2c_conf = &apq8064_back_cam_i2c_conf,
+	.csi_lane_params = &avdevice_csi_lane_params[0],
+	},
+	{
+	.mount_angle    = 0,
+	.cam_vreg = apq_8064_cam_vreg,
+	.num_vreg = ARRAY_SIZE(apq_8064_cam_vreg),
+	.gpio_conf = &apq8064_back_cam_gpio_conf,
+	.i2c_conf = &apq8064_back_cam_i2c_conf,
+	.csi_lane_params = &avdevice_csi_lane_params[1],
+	},
+	{
+	.mount_angle    = 0,
+	.cam_vreg = apq_8064_cam_vreg,
+	.num_vreg = ARRAY_SIZE(apq_8064_cam_vreg),
+	.gpio_conf = &apq8064_back_cam_gpio_conf,
+	.i2c_conf = &apq8064_back_cam_i2c_conf,
+	.csi_lane_params = &avdevice_csi_lane_params[2],
+	},
+};
+
+static struct msm_camera_device_platform_data msm_avdevice_csi_device_data[] = {
+	{
+		.csid_core = 0,
+		.is_vpe    = 0,
+		.cam_bus_scale_table = &cam_bus_client_pdata,
+	},
+	{
+		.csid_core = 1,
+		.is_vpe    = 0,
+		.cam_bus_scale_table = &cam_bus_client_pdata,
+	},
+	{
+		.csid_core = 2,
+		.is_vpe    = 0,
+		.cam_bus_scale_table = &cam_bus_client_pdata,
+	},
+};
+
+static struct msm_camera_sensor_info msm_camera_sensor_avdevice_data[] = {
+	{
+	.sensor_name    = "avdevcvbs",
+	.pdata  = &msm_avdevice_csi_device_data[CSI_CORE_0],
+	.flash_data = &flash_none,
+	.sensor_platform_info = &sensor_board_info_avdevice[0],
+	.csi_if = 1,
+	.camera_type = BACK_CAMERA_2D,
+	.sensor_type = YUV_SENSOR,
+	.sensor_pwd  = PM8921_GPIO_PM_TO_SYS(41),
+	.ba_idx = 1,
+	},
+	{
+	.sensor_name    = "avdevcvbs",
+	.pdata  = &msm_avdevice_csi_device_data[CSI_CORE_2],
+	.flash_data = &flash_none,
+	.sensor_platform_info = &sensor_board_info_avdevice[1],
+	.csi_if = 1,
+	.camera_type = FRONT_CAMERA_2D,
+	.sensor_type = YUV_SENSOR,
+	.sensor_pwd  = PM8921_GPIO_PM_TO_SYS(41),
+	.ba_idx = 0,
+	},
+	{
+	.sensor_name    = "avdevcvbs",
+	.pdata  = &msm_avdevice_csi_device_data[CSI_CORE_2],
+	.flash_data = &flash_none,
+	.sensor_platform_info = &sensor_board_info_avdevice[1],
+	.csi_if = 1,
+	.camera_type = BACK_CAMERA_2D,
+	.sensor_type = YUV_SENSOR,
+	.sensor_pwd  = PM8921_GPIO_PM_TO_SYS(41),
+	.ba_idx = 0,
+	},
+	{
+	.sensor_name    = "avdevhdmi",
+	.pdata  = &msm_avdevice_csi_device_data[CSI_CORE_0],
+	.flash_data = &flash_none,
+	.sensor_platform_info = &sensor_board_info_avdevice[2],
+	.csi_if = 1,
+	.camera_type = FRONT_CAMERA_2D,
+	.sensor_type = YUV_SENSOR,
+	.sensor_pwd  = PM8921_GPIO_PM_TO_SYS(41),
+	.ba_idx = 2,
+	},
+};
+
+struct platform_device msm_camera_avdevice = {
+	.name          = "avdevice",
+	.id            = 0,
+	.num_resources = 0,
+	.resource      = 0,
+	.dev.platform_data = &msm_camera_sensor_avdevice_data[0],
+};
+
+struct platform_device msm_camera_avdevice2 = {
+	.name          = "avdevice",
+	.id            = 1,
+	.num_resources = 0,
+	.resource      = 0,
+	.dev.platform_data = &msm_camera_sensor_avdevice_data[1],
+};
+
+struct platform_device msm_camera_avdevicecvbs = {
+	.name          = "avdevice",
+	.id            = 0,
+	.num_resources = 0,
+	.resource      = 0,
+	.dev.platform_data = &msm_camera_sensor_avdevice_data[2],
+};
+
+struct platform_device msm_camera_avdevicehdmi = {
+	.name          = "avdevice",
+	.id            = 1,
+	.num_resources = 0,
+	.resource      = 0,
+	.dev.platform_data = &msm_camera_sensor_avdevice_data[3],
+};
+
+
 void __init apq8064_init_cam(void)
 {
 	/* for SGLTE2 platform, do not configure i2c/gpiomux gsbi4 is used for
 	 * some other purpose */
 	if (socinfo_get_platform_subtype() != PLATFORM_SUBTYPE_SGLTE2) {
-		msm_gpiomux_install(apq8064_cam_common_configs,
-			ARRAY_SIZE(apq8064_cam_common_configs));
+		if (machine_is_apq8064_mplatform()) {
+		} else if (!(machine_is_apq8064_adp_2() ||
+			machine_is_apq8064_adp2_es2() ||
+			machine_is_apq8064_adp2_es2p5())) {
+			msm_gpiomux_install(apq8064_cam_common_configs,
+					ARRAY_SIZE(apq8064_cam_common_configs));
+		}
 	}
 
-	if (machine_is_apq8064_cdp()) {
+	if (machine_is_apq8064_cdp() || machine_is_apq8064_adp_2() ||
+		machine_is_apq8064_adp2_es2()
+		|| machine_is_apq8064_adp2_es2p5()) {
 		sensor_board_info_imx074.mount_angle = 0;
 		sensor_board_info_mt9m114.mount_angle = 0;
 	} else if (machine_is_apq8064_liquid())
@@ -743,11 +911,20 @@ void __init apq8064_init_cam(void)
 		platform_device_register(&msm8960_device_i2c_mux_gsbi4);
 	platform_device_register(&msm8960_device_csiphy0);
 	platform_device_register(&msm8960_device_csiphy1);
+	platform_device_register(&msm8960_device_csiphy2);
 	platform_device_register(&msm8960_device_csid0);
 	platform_device_register(&msm8960_device_csid1);
+	platform_device_register(&msm8960_device_csid2);
 	platform_device_register(&msm8960_device_ispif);
 	platform_device_register(&msm8960_device_vfe);
 	platform_device_register(&msm8960_device_vpe);
+
+#ifdef CONFIG_MSM_S_PLATFORM
+	platform_device_register(&msm_camera_avdevicecvbs);
+	platform_device_register(&msm_camera_avdevicehdmi);
+#else
+	platform_device_register(&msm_camera_avdevice);
+#endif
 }
 
 #ifdef CONFIG_I2C
@@ -786,4 +963,28 @@ struct msm_camera_board_info apq8064_camera_board_info = {
 	.num_i2c_board_info = ARRAY_SIZE(apq8064_camera_i2c_boardinfo),
 };
 #endif
+
+struct msm_camera_csiphy_params adp_rvc_csiphy_params = {
+	.lane_cnt = 1,
+	.settle_cnt = 0x14,
+	.lane_mask = 0x1,
+};
+struct msm_camera_csi_lane_params adp_rvc_csi_lane_params = {
+	.csi_lane_assign = 0xe4,
+	.csi_lane_mask = 0x1,
+	.csi_phy_sel = 2,
+};
+struct msm_camera_csid_vc_cfg adp_rvc_csid_cfg[] = {
+	{0, CSI_YUV422_8, CSI_DECODE_8BIT},
+	{1, CSI_EMBED_DATA, CSI_DECODE_8BIT},
+};
+struct msm_camera_csid_params adp_rvc_csid_params = {
+	.lane_cnt = 1,
+	.lane_assign = 0xe4,
+	.lut_params = {
+		.num_cid = ARRAY_SIZE(adp_rvc_csid_cfg),
+		.vc_cfg = adp_rvc_csid_cfg,
+	},
+};
+
 #endif
