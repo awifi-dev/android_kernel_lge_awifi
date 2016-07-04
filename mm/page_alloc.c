@@ -2187,6 +2187,7 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 				alloc_flags, preferred_zone,
 				migratetype);
 		if (page) {
+			preferred_zone->compact_blockskip_flush = false;
 			preferred_zone->compact_considered = 0;
 			preferred_zone->compact_defer_shift = 0;
 			if (order >= preferred_zone->compact_order_failed)
@@ -5838,7 +5839,7 @@ static int __alloc_contig_migrate_range(struct compact_control *cc,
 
 		if (list_empty(&cc->migratepages)) {
 			cc->nr_migratepages = 0;
-			pfn = isolate_migratepages_range(cc->zone, &cc,
+			pfn = isolate_migratepages_range(cc->zone, cc,
 							 pfn, end, true);
 			if (!pfn) {
 				ret = -EINTR;

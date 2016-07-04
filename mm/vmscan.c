@@ -268,6 +268,10 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 		long new_nr;
 		long batch_size = shrinker->batch ? shrinker->batch
 						  : SHRINK_BATCH;
+		long min_cache_size = batch_size;
+
+		if (current_is_kswapd())
+			min_cache_size = 0;
 
 		max_pass = do_shrinker_shrink(shrinker, shrink, 0);
 		if (max_pass <= 0)
@@ -319,8 +323,11 @@ unsigned long shrink_slab(struct shrink_control *shrink,
 					nr_pages_scanned, lru_pages,
 					max_pass, delta, total_scan);
 
-		while (total_scan >= batch_size) {
+		while (total_scan > min_cache_size) {
 			int nr_before;
+
+			if (total_scan < batch_size)
+				batch_size = total_scan;
 
 			nr_before = do_shrinker_shrink(shrinker, shrink, 0);
 			shrink_ret = do_shrinker_shrink(shrinker, shrink,
@@ -2816,6 +2823,14 @@ static void kswapd_try_to_sleep(pg_data_t *pgdat, int order, int classzone_idx)
 		 * them before going back to sleep.
 		 */
 		set_pgdat_percpu_threshold(pgdat, calculate_normal_threshold);
+
+		/*
+		 * Compaction records what page blocks it recently failed to
+		 * isolate pages from and skips them in the future scanning.
+		 * When kswapd is going to sleep, it is reasonable to assume
+		 * that pages and compaction may succeed so reset the cache.
+		 */
+		reset_isolation_suitable(pgdat);
 
 		if (!kthread_should_stop())
 			schedule();

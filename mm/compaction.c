@@ -81,21 +81,15 @@ static inline bool isolation_suitable(struct compact_control *cc,
  * should be skipped for page isolation when the migrate and free page scanner
  * meet.
  */
-static void reset_isolation_suitable(struct zone *zone)
+static void __reset_isolation_suitable(struct zone *zone)
 {
 	unsigned long start_pfn = zone->zone_start_pfn;
 	unsigned long end_pfn = zone->zone_start_pfn + zone->spanned_pages;
 	unsigned long pfn;
 
-	/*
-	 * Do not reset more than once every five seconds. If allocations are
-	 * failing sufficiently quickly to allow this to happen then continually
-	 * scanning for compaction is not going to help. The choice of five
-	 * seconds is arbitrary but will mitigate excessive scanning.
-	 */
-	if (time_before(jiffies, zone->compact_blockskip_expire))
-		return;
-	zone->compact_blockskip_expire = jiffies + (HZ * 5);
+	zone->compact_cached_migrate_pfn = start_pfn;
+	zone->compact_cached_free_pfn = end_pfn;
+	zone->compact_blockskip_flush = false;
 
 	/* Walk the zone and mark every pageblock as suitable for isolation */
 	for (pfn = start_pfn; pfn < end_pfn; pfn += pageblock_nr_pages) {
@@ -114,17 +108,48 @@ static void reset_isolation_suitable(struct zone *zone)
 	}
 }
 
+void reset_isolation_suitable(pg_data_t *pgdat)
+{
+	int zoneid;
+
+	for (zoneid = 0; zoneid < MAX_NR_ZONES; zoneid++) {
+		struct zone *zone = &pgdat->node_zones[zoneid];
+		if (!populated_zone(zone))
+			continue;
+
+		/* Only flush if a full compaction finished recently */
+		if (zone->compact_blockskip_flush)
+			__reset_isolation_suitable(zone);
+	}
+}
+
 /*
  * If no pages were isolated then mark this pageblock to be skipped in the
- * future. The information is later cleared by reset_isolation_suitable().
+ * future. The information is later cleared by __reset_isolation_suitable().
  */
-static void update_pageblock_skip(struct page *page, unsigned long nr_isolated)
+static void update_pageblock_skip(struct compact_control *cc,
+			struct page *page, unsigned long nr_isolated,
+			bool migrate_scanner)
 {
+	struct zone *zone = cc->zone;
 	if (!page)
 		return;
 
-	if (!nr_isolated)
+	if (!nr_isolated) {
+		unsigned long pfn = page_to_pfn(page);
 		set_pageblock_skip(page);
+
+		/* Update where compaction should restart */
+		if (migrate_scanner) {
+			if (!cc->finished_update_migrate &&
+			    pfn > zone->compact_cached_migrate_pfn)
+				zone->compact_cached_migrate_pfn = pfn;
+		} else {
+			if (!cc->finished_update_free &&
+			    pfn < zone->compact_cached_free_pfn)
+				zone->compact_cached_free_pfn = pfn;
+		}
+	}
 }
 #else
 static inline bool isolation_suitable(struct compact_control *cc,
@@ -133,7 +158,9 @@ static inline bool isolation_suitable(struct compact_control *cc,
 	return true;
 }
 
-static void update_pageblock_skip(struct page *page, unsigned long nr_isolated)
+static void update_pageblock_skip(struct compact_control *cc,
+			struct page *page, unsigned long nr_isolated,
+			bool migrate_scanner)
 {
 }
 #endif /* CONFIG_COMPACTION */
@@ -229,6 +256,7 @@ static unsigned long isolate_freepages_block(struct compact_control *cc,
 		nr_scanned++;
 		if (!pfn_valid_within(blockpfn))
 			goto isolate_fail;
+
 		if (!valid_page)
 			valid_page = page;
 		if (!PageBuddy(page))
@@ -289,14 +317,13 @@ isolate_fail:
 	if (locked)
 		spin_unlock_irqrestore(&cc->zone->lock, flags);
 
+	/* Update the pageblock-skip if the whole pageblock was scanned */
+	if (blockpfn == end_pfn)
+		update_pageblock_skip(cc, valid_page, total_isolated, false);
+
 	count_compact_events(COMPACTFREE_SCANNED, nr_scanned);
 	if (total_isolated)
 		count_compact_events(COMPACTISOLATED, total_isolated);
-
-	/* Update the pageblock-skip if the whole pageblock was scanned */
-	if (blockpfn == end_pfn)
-		update_pageblock_skip(valid_page, total_isolated);
-
 	return total_isolated;
 }
 
@@ -501,6 +528,7 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		 */
 		if (!cc->sync && last_pageblock_nr != pageblock_nr &&
 		    !migrate_async_suitable(get_pageblock_migratetype(page))) {
+			cc->finished_update_migrate = true;
 			goto next_pageblock;
 		}
 
@@ -552,6 +580,7 @@ isolate_migratepages_range(struct zone *zone, struct compact_control *cc,
 		VM_BUG_ON(PageTransCompound(page));
 
 		/* Successfully isolated */
+		cc->finished_update_migrate = true;
 		del_page_from_lru_list(zone, page, page_lru(page));
 		list_add(&page->lru, migratelist);
 		cc->nr_migratepages++;
@@ -577,7 +606,7 @@ next_pageblock:
 
 	/* Update the pageblock-skip if the whole pageblock was scanned */
 	if (low_pfn == end_pfn)
-		update_pageblock_skip(valid_page, nr_isolated);
+		update_pageblock_skip(cc, valid_page, nr_isolated, true);
 
 	trace_mm_compaction_isolate_migratepages(nr_scanned, nr_isolated);
 
@@ -670,8 +699,10 @@ static void isolate_freepages(struct zone *zone,
 		 * looking for free pages, the search will restart here as
 		 * page migration may have returned some pages to the allocator
 		 */
-		if (isolated)
+		if (isolated) {
+			cc->finished_update_free = true;
 			high_pfn = max(high_pfn, pfn);
+		}
 	}
 
 	/* split_free_page does not map the pages */
@@ -776,7 +807,15 @@ static int compact_finished(struct zone *zone,
 
 	/* Compaction run completes if the migrate and free scanner meet */
 	if (cc->free_pfn <= cc->migrate_pfn) {
-		reset_isolation_suitable(cc->zone);
+		/*
+		 * Mark that the PG_migrate_skip information should be cleared
+		 * by kswapd when it goes to sleep. kswapd does not set the
+		 * flag itself as the decision to be clear should be directly
+		 * based on an allocation request.
+		 */
+		if (!current_is_kswapd())
+			zone->compact_blockskip_flush = true;
+
 		return COMPACT_COMPLETE;
 	}
 
@@ -863,6 +902,8 @@ unsigned long compaction_suitable(struct zone *zone, int order)
 static int compact_zone(struct zone *zone, struct compact_control *cc)
 {
 	int ret;
+	unsigned long start_pfn = zone->zone_start_pfn;
+	unsigned long end_pfn = zone->zone_start_pfn + zone->spanned_pages;
 
 	ret = compaction_suitable(zone, cc->order);
 	switch (ret) {
@@ -875,14 +916,29 @@ static int compact_zone(struct zone *zone, struct compact_control *cc)
 		;
 	}
 
-	/* Setup to move all movable pages to the end of the zone */
-	cc->migrate_pfn = zone->zone_start_pfn;
-	cc->free_pfn = cc->migrate_pfn + zone->spanned_pages;
-	cc->free_pfn &= ~(pageblock_nr_pages-1);
+	/*
+	 * Setup to move all movable pages to the end of the zone. Used cached
+	 * information on where the scanners should start but check that it
+	 * is initialised by ensuring the values are within zone boundaries.
+	 */
+	cc->migrate_pfn = zone->compact_cached_migrate_pfn;
+	cc->free_pfn = zone->compact_cached_free_pfn;
+	if (cc->free_pfn < start_pfn || cc->free_pfn > end_pfn) {
+		cc->free_pfn = end_pfn & ~(pageblock_nr_pages-1);
+		zone->compact_cached_free_pfn = cc->free_pfn;
+	}
+	if (cc->migrate_pfn < start_pfn || cc->migrate_pfn > end_pfn) {
+		cc->migrate_pfn = start_pfn;
+		zone->compact_cached_migrate_pfn = cc->migrate_pfn;
+	}
 
-	/* Clear pageblock skip if there are numerous alloc failures */
-	if (zone->compact_defer_shift == COMPACT_MAX_DEFER_SHIFT)
-		reset_isolation_suitable(zone);
+	/*
+	 * Clear pageblock skip if there were failures recently and compaction
+	 * is about to be retried after being deferred. kswapd does not do
+	 * this reset as it'll reset the cached information when going to sleep.
+	 */
+	if (compaction_restarting(zone, cc->order) && !current_is_kswapd())
+		__reset_isolation_suitable(zone);
 
 	migrate_prep_local();
 

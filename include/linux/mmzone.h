@@ -377,7 +377,12 @@ struct zone {
 	 */
 	spinlock_t		lock;
 #if defined CONFIG_COMPACTION || defined CONFIG_CMA
-	unsigned long		compact_blockskip_expire;
+	/* Set to true when the PG_migrate_skip bits should be cleared */
+	bool			compact_blockskip_flush;
+
+	/* pfns where compaction scanners should start */
+	unsigned long		compact_cached_free_pfn;
+	unsigned long		compact_cached_migrate_pfn;
 #endif
 #ifdef CONFIG_MEMORY_HOTPLUG
 	/* see spanned/present_pages for more description */
@@ -522,12 +527,6 @@ static inline int zone_is_oom_locked(const struct zone *zone)
 {
 	return test_bit(ZONE_OOM_LOCKED, &zone->flags);
 }
-
-#ifdef CONFIG_SMP
-unsigned long zone_nr_free_pages(struct zone *zone);
-#else
-#define zone_nr_free_pages(zone) zone_page_state(zone, NR_FREE_PAGES)
-#endif /* CONFIG_SMP */
 
 /*
  * The "priority" of VM scanning is how much of the queues we will scan in one
